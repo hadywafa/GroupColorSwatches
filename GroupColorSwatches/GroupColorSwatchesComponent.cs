@@ -1,12 +1,9 @@
 using Grasshopper.Kernel;
-using Grasshopper.Kernel.Parameters;
 using Grasshopper.Kernel.Special;
-using Rhino.UI;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
-using System.Windows.Forms;
 
 namespace GroupColorSwatches
 {
@@ -38,19 +35,16 @@ namespace GroupColorSwatches
         protected override void SolveInstance(IGH_DataAccess DA)
         {
             var targetColors = new List<Color>();
-
             if (!DA.GetDataList(0, targetColors))
                 return;
-
             //----------------------------------------------------
-            IGH_Param inputParameter = Params.Input[1];
+            IGH_Param inputParameter = Params.Input[0];
             var dataAccessor = inputParameter.Sources;
             var colourSwatches = dataAccessor.OfType<GH_ColourSwatch>().ToList();
             //----------------------------------------------------
-            var options = GetOptionData(colourSwatches);
-
             var doc = Grasshopper.Instances.ActiveCanvas.Document;
             var currentGroups = doc.Objects.OfType<GH_Group>().ToList();
+            var options = GetOptionData(colourSwatches);
             foreach (var group in currentGroups)
             {
                 if (
@@ -59,6 +53,8 @@ namespace GroupColorSwatches
                 )
                 {
                     var option = options.Where(x => x.NickName == group.NickName).FirstOrDefault();
+                    if (option == null)
+                        return;
                     // Set the group color
                     group.NickName = option.NickName;
                     group.Colour = option.Color;
@@ -75,6 +71,8 @@ namespace GroupColorSwatches
             foreach (var swatch in colourSwatches)
             {
                 var swatchgroup = GetGroupByComponetGuidId(swatch.ComponentGuid);
+                if (swatchgroup == null)
+                    continue;
                 options.Add(
                     new GroupOptionDto
                     {
@@ -90,10 +88,11 @@ namespace GroupColorSwatches
         public GH_Group GetGroupByComponetGuidId(Guid componentGuid)
         {
             var doc = Grasshopper.Instances.ActiveCanvas.Document;
-            return doc.Objects
+            var result = doc.Objects
                 .OfType<GH_Group>()
-                .Where(x => x.ObjectIDs.Contains(componentGuid))
+                .Where(y => y.Objects().Select(x => x.ComponentGuid).Contains(componentGuid))
                 .FirstOrDefault();
+            return result;
         }
 
         protected override System.Drawing.Bitmap Icon =>
