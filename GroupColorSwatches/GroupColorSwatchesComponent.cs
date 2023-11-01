@@ -1,9 +1,11 @@
 using Grasshopper.Kernel;
 using Grasshopper.Kernel.Special;
+using Rhino.UI;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
+using static System.Windows.Forms.VisualStyles.VisualStyleElement.Window;
 
 namespace GroupColorSwatches
 {
@@ -26,6 +28,13 @@ namespace GroupColorSwatches
                 "Target Colors that you need to assign ti its corresponding Groups.",
                 GH_ParamAccess.list
             );
+
+            pManager.AddBooleanParameter(
+                "Update",
+                "update",
+                "update component",
+                GH_ParamAccess.item
+            );
         }
 
         protected override void RegisterOutputParams(
@@ -35,17 +44,23 @@ namespace GroupColorSwatches
         protected override void SolveInstance(IGH_DataAccess DA)
         {
             var targetColors = new List<Color>();
-            if (!DA.GetDataList(0, targetColors))
+            bool update = false;
+            if (!DA.GetDataList(0, targetColors) || !DA.GetData<bool>(1, ref update))
                 return;
             //----------------------------------------------------
+            if (!update)
+                return;
             IGH_Param inputParameter = Params.Input[0];
             var dataAccessor = inputParameter.Sources;
-            var colourSwatches = dataAccessor.OfType<GH_ColourSwatch>().ToList();
             //----------------------------------------------------
             var doc = Grasshopper.Instances.ActiveCanvas.Document;
             var currentGroups = doc.Objects.OfType<GH_Group>().ToList();
+            var colourSwatches = dataAccessor.OfType<GH_ColourSwatch>().ToList();
+            if (colourSwatches.Count == 0 || currentGroups.Count == 0)
+                return;
             var options = GetOptionData(colourSwatches);
-            foreach (var group in currentGroups)
+            var targetGroups = currentGroups.Where(x => !string.IsNullOrEmpty(x.NickName)).ToList();
+            foreach (var group in targetGroups)
             {
                 if (
                     !string.IsNullOrEmpty(group.NickName)
@@ -53,12 +68,13 @@ namespace GroupColorSwatches
                 )
                 {
                     var option = options.Where(x => x.NickName == group.NickName).FirstOrDefault();
-                    if (option == null)
-                        return;
-                    // Set the group color
-                    group.NickName = option.NickName;
-                    group.Colour = option.Color;
-                    group.Border = option.Border;
+                    if (option != null)
+                    {
+                        group.Colour = option.Color;
+                        group.Border = option.Border;
+                    }
+                    else
+                        continue;
                 }
             }
             //----------------------------------- Auto Recompute Component Options ------------------------------
@@ -67,31 +83,33 @@ namespace GroupColorSwatches
 
         public List<GroupOptionDto> GetOptionData(List<GH_ColourSwatch> colourSwatches)
         {
+            var doc = Grasshopper.Instances.ActiveCanvas.Document;
             var options = new List<GroupOptionDto>();
             foreach (var swatch in colourSwatches)
             {
-                var swatchgroup = GetGroupByComponetGuidId(swatch.ComponentGuid);
-                if (swatchgroup == null)
-                    continue;
+                var swatchgroup = GetGroupByComponet(swatch);
+                if (swatchgroup != null)
+                {
+                    swatchgroup.Colour = swatch.SwatchColour;
+                }
                 options.Add(
                     new GroupOptionDto
                     {
                         NickName = swatch.NickName,
                         Color = swatch.SwatchColour,
-                        Border = swatchgroup.Border,
+                        Border = swatchgroup?.Border ?? GH_GroupBorder.Rectangles,
                     }
                 );
             }
             return options;
         }
 
-        public GH_Group GetGroupByComponetGuidId(Guid componentGuid)
+        public GH_Group GetGroupByComponet(GH_ColourSwatch swatch)
         {
             var doc = Grasshopper.Instances.ActiveCanvas.Document;
             var result = doc.Objects
                 .OfType<GH_Group>()
-                .Where(y => y.Objects().Select(x => x.ComponentGuid).Contains(componentGuid))
-                .FirstOrDefault();
+                .FirstOrDefault(group => group.Objects().Contains(swatch));
             return result;
         }
 
